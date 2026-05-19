@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: storm-dashboard
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: GOOGLE_SHEET_URL
+        sync: false   # Set this manually in Render dashboard — paste your sheet export URL
