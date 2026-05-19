@@ -6,14 +6,12 @@ const app = express();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // ── Google Sheets proxy ──────────────────────────────────────────
-// Fetches the sheet server-side so the browser never hits CORS.
-// URL priority: env var GOOGLE_SHEET_URL → ?url= query param from frontend.
-app.get('/api/sheets', async (req, res) => {
-  const sheetUrl = process.env.GOOGLE_SHEET_URL || req.query.url;
+// URL is kept server-side only — never exposed to the browser.
+const SHEET_URL = process.env.GOOGLE_SHEET_URL ||
+  'https://docs.google.com/spreadsheets/d/1pcudyEeHGbO0bI0DBRH5n7y0AjlFX5v9BWWQNwBNhKU/export?format=csv&gid=0';
 
-  if (!sheetUrl) {
-    return res.status(400).json({ error: 'No sheet URL configured. Set GOOGLE_SHEET_URL env var on Render or enter it in the dashboard.' });
-  }
+app.get('/api/sheets', async (_req, res) => {
+  const sheetUrl = SHEET_URL;
 
   try {
     const response = await fetch(sheetUrl, {

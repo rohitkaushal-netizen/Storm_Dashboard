@@ -1,13 +1,11 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import CSVUploader from './components/CSVUploader';
-import SheetConfig from './components/SheetConfig';
 import DateFilter from './components/DateFilter';
 import ManagerView from './views/ManagerView';
 import CreatorView from './views/CreatorView';
 import LeadershipView from './views/LeadershipView';
 import TeamTATView from './views/TeamTATView';
-import { BarChart2, Users, TrendingUp, RefreshCw, Clock, FileSpreadsheet, Upload } from 'lucide-react';
-import { getSavedSheetUrl, fetchSheetTickets, REFRESH_INTERVAL_MS } from './services/sheetsService';
+import { BarChart2, Users, TrendingUp, RefreshCw, Clock, CheckCircle, AlertCircle } from 'lucide-react';
+import { fetchSheetTickets, REFRESH_INTERVAL_MS } from './services/sheetsService';
 import './App.css';
 
 const TABS = [
@@ -17,67 +15,46 @@ const TABS = [
   { id: 'teamtat',    label: 'Team TAT',              icon: Clock      },
 ];
 
-export default function App() {
-  const [tickets, setTickets]         = useState([]);
-  const [activeTab, setActiveTab]     = useState('manager');
-  const [dateFrom, setDateFrom]       = useState(null);
-  const [dateTo, setDateTo]           = useState(null);
-  const [dataSource, setDataSource]   = useState(() => getSavedSheetUrl() ? 'sheet' : 'csv');
+function fmtCountdown(msLeft) {
+  if (msLeft <= 0) return 'now';
+  const h = Math.floor(msLeft / 3600000);
+  const m = Math.floor((msLeft % 3600000) / 60000);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
 
-  // Sheet state
-  const [sheetLoading, setSheetLoading] = useState(false);
-  const [sheetError, setSheetError]     = useState(null);
+export default function App() {
+  const [tickets, setTickets]           = useState([]);
+  const [activeTab, setActiveTab]       = useState('manager');
+  const [dateFrom, setDateFrom]         = useState(null);
+  const [dateTo, setDateTo]             = useState(null);
+  const [loading, setLoading]           = useState(false);
+  const [error, setError]               = useState(null);
   const [lastFetchedAt, setLastFetchedAt] = useState(null);
   const [nextFetchAt, setNextFetchAt]     = useState(null);
-  const [sheetLabel, setSheetLabel]       = useState(null);
   const refreshTimer = useRef(null);
 
-  // CSV state
-  const [csvLabel, setCsvLabel]   = useState(null);
-  const [csvUploadedAt, setCsvUploadedAt] = useState(null);
-
-  // ── Sheet auto-refresh ────────────────────────────────────────
-  const loadSheet = useCallback(async (url) => {
-    if (!url) return;
-    setSheetLoading(true);
-    setSheetError(null);
+  const loadSheet = useCallback(async () => {
+    setLoading(true);
+    setError(null);
     try {
-      const data = await fetchSheetTickets(url);
+      const data = await fetchSheetTickets();
       setTickets(data);
       const now = Date.now();
       setLastFetchedAt(now);
       setNextFetchAt(now + REFRESH_INTERVAL_MS);
-      setSheetLabel(`${data.length} tickets`);
     } catch (e) {
-      setSheetError(e.message);
+      setError(e.message);
     } finally {
-      setSheetLoading(false);
+      setLoading(false);
     }
   }, []);
 
-  // Schedule auto-refresh
   useEffect(() => {
-    if (dataSource !== 'sheet') return;
-    const url = getSavedSheetUrl();
-    if (!url) return;
-
-    loadSheet(url); // initial load
-
-    refreshTimer.current = setInterval(() => {
-      loadSheet(getSavedSheetUrl());
-    }, REFRESH_INTERVAL_MS);
-
+    loadSheet();
+    refreshTimer.current = setInterval(loadSheet, REFRESH_INTERVAL_MS);
     return () => clearInterval(refreshTimer.current);
-  }, [dataSource, loadSheet]);
+  }, [loadSheet]);
 
-  // ── CSV upload ────────────────────────────────────────────────
-  const handleCSVLoaded = (data, filename) => {
-    setTickets(data);
-    setCsvLabel(filename);
-    setCsvUploadedAt(new Date().toLocaleString('en-IN'));
-  };
-
-  // ── Date filter ───────────────────────────────────────────────
   const filteredTickets = useMemo(() => {
     if (!dateFrom && !dateTo) return tickets;
     return tickets.filter(t => {
@@ -91,6 +68,7 @@ export default function App() {
 
   const hasData    = tickets.length > 0;
   const isFiltered = dateFrom || dateTo;
+  const msUntilNext = nextFetchAt ? nextFetchAt - Date.now() : null;
 
   return (
     <div className="app">
@@ -102,9 +80,7 @@ export default function App() {
             <span className="header-title">Support Operations Dashboard</span>
             {hasData && (
               <span className="header-sub">
-                {dataSource === 'sheet'
-                  ? `Live · Google Sheets · ${tickets.length} tickets`
-                  : `CSV · ${csvLabel} · ${tickets.length} tickets · loaded ${csvUploadedAt}`}
+                Live · {tickets.length} tickets
               </span>
             )}
           </div>
@@ -126,49 +102,27 @@ export default function App() {
               })}
             </nav>
           )}
-          {/* Source switcher */}
-          <div className="source-switcher">
-            <button
-              className={`source-btn ${dataSource === 'sheet' ? 'active' : ''}`}
-              onClick={() => setDataSource('sheet')}
-              title="Live Google Sheets"
-            >
-              <FileSpreadsheet size={14} /> Live
-            </button>
-            <button
-              className={`source-btn ${dataSource === 'csv' ? 'active' : ''}`}
-              onClick={() => setDataSource('csv')}
-              title="Upload CSV"
-            >
-              <Upload size={14} /> CSV
-            </button>
-          </div>
         </div>
       </header>
 
-      {/* ── Sheet config / CSV uploader ── */}
-      {dataSource === 'sheet' && (
-        <SheetConfig
-          onDataLoaded={setTickets}
-          lastFetchedAt={lastFetchedAt}
-          nextFetchAt={nextFetchAt}
-          onManualRefresh={loadSheet}
-          loading={sheetLoading}
-          error={sheetError}
-        />
-      )}
-
-      {dataSource === 'csv' && !hasData && (
-        <div className="upload-section">
-          <CSVUploader onDataLoaded={handleCSVLoaded} lastUpload={csvLabel} />
+      {/* ── Sheet status bar ── */}
+      <div className="sheet-config">
+        <div className="sheet-status-row">
+          {error ? (
+            <span className="sheet-status-err"><AlertCircle size={13} /> {error}</span>
+          ) : loading ? (
+            <span className="sheet-status-loading"><RefreshCw size={13} className="spin" /> Fetching data…</span>
+          ) : lastFetchedAt ? (
+            <span className="sheet-status-ok">
+              <CheckCircle size={13} /> Updated {new Date(lastFetchedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+              {msUntilNext !== null && ` · next in ${fmtCountdown(msUntilNext)}`}
+            </span>
+          ) : null}
+          <button className="sheet-refresh-btn" onClick={loadSheet} disabled={loading} title="Refresh now">
+            <RefreshCw size={13} className={loading ? 'spin' : ''} /> Refresh now
+          </button>
         </div>
-      )}
-
-      {dataSource === 'csv' && hasData && (
-        <div className="csv-refresh-bar">
-          <CSVUploader onDataLoaded={handleCSVLoaded} lastUpload={csvLabel} />
-        </div>
-      )}
+      </div>
 
       {/* ── Date filter strip ── */}
       {hasData && (
@@ -194,10 +148,7 @@ export default function App() {
 
       {hasData && (
         <footer className="app-footer">
-          SLA: 12 working hours · 9:30 AM – 6:30 PM IST (Mon–Fri)
-          {dataSource === 'sheet' && lastFetchedAt && (
-            <> · Auto-refreshes every 4 hours</>
-          )}
+          SLA: 12 working hours · 9:30 AM – 6:30 PM IST (Mon–Fri) · Auto-refreshes every 4 hours
         </footer>
       )}
     </div>
