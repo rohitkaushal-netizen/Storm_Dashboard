@@ -39,31 +39,44 @@ function computeTicketMetrics(row) {
   let tatHours = parseFloat(row['tat_in_hours']) || null;
   let firstResponseTAT = parseFloat(row['first_response_TAT']) || null;
 
-  // TAT is paused while waiting for customer info — clock stops for the team
+  // TAT is paused while waiting for customer info — team is not penalised
   const tatPaused = status === 'Info Required';
 
-  // Compute working TAT:
-  //  - Info Required: freeze at updatedAt (the moment it became Info Required)
-  //  - Closed: freeze at close time
-  //  - Open: measure up to now
+  // Active period start for TAT and SLA calculation:
+  //
+  //   Info Provided (open): updatedAt = when customer provided info → fresh 12h SLA window
+  //   Info Required (open): createdAt = when current work period began (before pausing)
+  //   All other open:       createdAt (= new_creation_timestamp_cs, the last CS restart point)
+  //   Closed:               createdAt (updatedAt = close time, not restart time)
+  //
+  // new_creation_timestamp_cs is designed to reset when Info Provided is set by the system.
+  // For open "Info Provided" we also anchor to updatedAt (the status-change moment) so the
+  // 12h window is correct even if the system column hasn't refreshed in the sheet yet.
+  const activePeriodStart = (!isClosed && status === 'Info Provided' && updatedAt)
+    ? updatedAt
+    : createdAt;
+
+  // Working TAT for the current active period:
+  //   - Info Required: frozen at the moment the clock was paused (updatedAt)
+  //   - Closed: time from active period start to closure
+  //   - Open: elapsed time from active period start to now
   let workingTAT = null;
-  if (createdAt) {
+  if (activePeriodStart) {
     let endTime;
-    if (tatPaused)                  endTime = updatedAt || new Date();
-    else if (isClosed && updatedAt) endTime = updatedAt;
-    else                            endTime = new Date();
-    workingTAT = workingHoursBetween(createdAt, endTime);
+    if (tatPaused)                   endTime = updatedAt || new Date();  // frozen
+    else if (isClosed && updatedAt)  endTime = updatedAt;
+    else                             endTime = new Date();
+    workingTAT = workingHoursBetween(activePeriodStart, endTime);
   }
 
-  // Paused tickets are never counted as breached — the clock is stopped
+  // Paused tickets are not breached — clock is stopped
   const slaBreached = tatPaused
     ? false
     : (workingTAT !== null ? workingTAT > SLA_HOURS : (tatHours !== null ? tatHours > SLA_HOURS : false));
 
-  // SLA deadline = creation time + 12 working hours
-  // createdAt uses new_creation_timestamp_cs which resets when Info Provided is set,
-  // so the deadline automatically shifts to 12h from the info-provided moment.
-  const slaDeadline = createdAt ? addWorkingHours(createdAt, SLA_HOURS) : null;
+  // SLA deadline = active period start + 12 working hours
+  // Resets to 12h from Info Provided time when info arrives.
+  const slaDeadline = activePeriodStart ? addWorkingHours(activePeriodStart, SLA_HOURS) : null;
 
   return {
     id: row['tickets_id'] || row['ticket_key'],
