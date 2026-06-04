@@ -20,8 +20,24 @@ function fmtDuration(totalMinutes) {
 }
 
 export default function DeadlineCell({ ticket, now }) {
-  const { slaDeadline, isOpen, isClosed, createdAt, workingTAT } = ticket;
+  const { slaDeadline, isOpen, isClosed, createdAt, workingTAT, tatPaused } = ticket;
   if (!slaDeadline || !createdAt) return <span className="dl-na">—</span>;
+
+  // Info Required: TAT clock is paused — show frozen progress, no countdown
+  if (tatPaused) {
+    const consumed = workingTAT ?? 0;
+    const pct = Math.min((consumed / SLA_HOURS) * 100, 100);
+    return (
+      <div className="dl-cell">
+        <div className="dl-date">{fmtDeadline(slaDeadline)}</div>
+        <div className="dl-timer dl-paused">⏸ Paused (Info Required)</div>
+        <div className="dl-bar-wrap">
+          <div className="dl-bar-fill" style={{ width: `${pct}%`, background: '#94a3b8' }} />
+          <span className="dl-bar-label">{consumed.toFixed(1)}h / {SLA_HOURS}h</span>
+        </div>
+      </div>
+    );
+  }
 
   // For closed tickets: show whether SLA was met
   if (isClosed) {

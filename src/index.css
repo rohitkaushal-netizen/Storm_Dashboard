@@ -505,6 +505,7 @@ body { margin: 0; }
 .dl-warning  { background: #ffedd5; color: #9a3412; }
 .dl-critical { background: #fee2e2; color: #b91c1c; animation: pulse-red 1.5s infinite; }
 .dl-overdue  { background: #7f1d1d; color: white;   animation: pulse-dark 1.5s infinite; }
+.dl-paused   { background: #e2e8f0; color: #64748b; }
 
 @keyframes pulse-red  { 0%,100%{opacity:1} 50%{opacity:0.7} }
 @keyframes pulse-dark { 0%,100%{opacity:1} 50%{opacity:0.8} }

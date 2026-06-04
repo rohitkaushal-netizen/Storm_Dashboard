@@ -39,16 +39,30 @@ function computeTicketMetrics(row) {
   let tatHours = parseFloat(row['tat_in_hours']) || null;
   let firstResponseTAT = parseFloat(row['first_response_TAT']) || null;
 
-  // Compute working TAT ourselves if needed (for open tickets, elapsed time)
+  // TAT is paused while waiting for customer info — clock stops for the team
+  const tatPaused = status === 'Info Required';
+
+  // Compute working TAT:
+  //  - Info Required: freeze at updatedAt (the moment it became Info Required)
+  //  - Closed: freeze at close time
+  //  - Open: measure up to now
   let workingTAT = null;
   if (createdAt) {
-    const endTime = isClosed && updatedAt ? updatedAt : new Date();
+    let endTime;
+    if (tatPaused)                  endTime = updatedAt || new Date();
+    else if (isClosed && updatedAt) endTime = updatedAt;
+    else                            endTime = new Date();
     workingTAT = workingHoursBetween(createdAt, endTime);
   }
 
-  const slaBreached = workingTAT !== null ? workingTAT > SLA_HOURS : (tatHours !== null ? tatHours > SLA_HOURS : false);
+  // Paused tickets are never counted as breached — the clock is stopped
+  const slaBreached = tatPaused
+    ? false
+    : (workingTAT !== null ? workingTAT > SLA_HOURS : (tatHours !== null ? tatHours > SLA_HOURS : false));
 
   // SLA deadline = creation time + 12 working hours
+  // createdAt uses new_creation_timestamp_cs which resets when Info Provided is set,
+  // so the deadline automatically shifts to 12h from the info-provided moment.
   const slaDeadline = createdAt ? addWorkingHours(createdAt, SLA_HOURS) : null;
 
   return {
@@ -73,6 +87,7 @@ function computeTicketMetrics(row) {
     isClosed,
     tatHours,
     workingTAT,
+    tatPaused,
     slaBreached,
     slaDeadline,
     firstResponseTAT,
