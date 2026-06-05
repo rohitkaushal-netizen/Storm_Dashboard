@@ -27,55 +27,61 @@ export function parseDate(val) {
 }
 
 function computeTicketMetrics(row) {
-  const createdAt = parseDate(row['new_creation_timestamp_cs'] || row['created_at'] || row['creation_date']);
+  // Original creation time — used only for date filtering and display
+  const createdAt = parseDate(row['created_at'] || row['creation_date']);
   const updatedAt = parseDate(row['updated_at'] || row['updation_date']);
-  const status = row['current_ticket_status'] || null;
+  const status    = row['current_ticket_status'] || null;
   const finalStatus = row['Final_Ticket_Status'] || null;
 
-  const isOpen = !CLOSED_STATUSES.includes(status) && !CLOSED_STATUSES.includes(finalStatus);
+  const isOpen   = !CLOSED_STATUSES.includes(status) && !CLOSED_STATUSES.includes(finalStatus);
   const isClosed = CLOSED_STATUSES.includes(finalStatus) || CLOSED_STATUSES.includes(status);
 
-  // Use pre-computed TAT columns when available, else compute from timestamps
-  let tatHours = parseFloat(row['tat_in_hours']) || null;
+  let tatHours       = parseFloat(row['tat_in_hours'])      || null;
   let firstResponseTAT = parseFloat(row['first_response_TAT']) || null;
 
-  // TAT is paused while waiting for customer info — team is not penalised
+  // TAT is paused while waiting for customer info — team not penalised
   const tatPaused = status === 'Info Required';
 
-  // Active period start for TAT and SLA calculation:
+  // Timestamps for each cycle track
+  const firstResponseTime   = parseDate(row['first_response_time']);      // overall first response
+  const firstResponseTimeCs = parseDate(row['first_response_time_cs']);   // CS-track restart after Info Provided
+  const csCreatedAt         = parseDate(row['new_creation_timestamp_cs']); // fallback restart anchor
+
+  // Active period start — where the current SLA window begins:
   //
-  //   Info Provided (open): updatedAt = when customer provided info → fresh 12h SLA window
-  //   Info Required (open): createdAt = when current work period began (before pausing)
-  //   All other open:       createdAt (= new_creation_timestamp_cs, the last CS restart point)
-  //   Closed:               createdAt (updatedAt = close time, not restart time)
+  //  Info Provided (open): CS team starts a fresh cycle.
+  //    Use first_response_time_cs (first CS response after Info Provided).
+  //    Fallback: new_creation_timestamp_cs → first_response_time → created_at
   //
-  // new_creation_timestamp_cs is designed to reset when Info Provided is set by the system.
-  // For open "Info Provided" we also anchor to updatedAt (the status-change moment) so the
-  // 12h window is correct even if the system column hasn't refreshed in the sheet yet.
-  const activePeriodStart = (!isClosed && status === 'Info Provided' && updatedAt)
-    ? updatedAt
-    : createdAt;
+  //  All other states (open or closed): TAT runs from the first team response.
+  //    Use first_response_time → new_creation_timestamp_cs → created_at
+  let activePeriodStart;
+  if (!isClosed && status === 'Info Provided') {
+    activePeriodStart = firstResponseTimeCs || csCreatedAt || firstResponseTime || createdAt;
+  } else {
+    activePeriodStart = firstResponseTime || csCreatedAt || createdAt;
+  }
 
   // Working TAT for the current active period:
-  //   - Info Required: frozen at the moment the clock was paused (updatedAt)
-  //   - Closed: time from active period start to closure
-  //   - Open: elapsed time from active period start to now
+  //   Info Required: frozen at updatedAt (moment the clock was paused)
+  //   Closed:        from active period start to close time
+  //   Open:          from active period start to now
   let workingTAT = null;
   if (activePeriodStart) {
     let endTime;
-    if (tatPaused)                   endTime = updatedAt || new Date();  // frozen
+    if (tatPaused)                   endTime = updatedAt || new Date();
     else if (isClosed && updatedAt)  endTime = updatedAt;
     else                             endTime = new Date();
     workingTAT = workingHoursBetween(activePeriodStart, endTime);
   }
 
-  // Paused tickets are not breached — clock is stopped
+  // Paused tickets never count as breached — clock is stopped
   const slaBreached = tatPaused
     ? false
     : (workingTAT !== null ? workingTAT > SLA_HOURS : (tatHours !== null ? tatHours > SLA_HOURS : false));
 
   // SLA deadline = active period start + 12 working hours
-  // Resets to 12h from Info Provided time when info arrives.
+  // Automatically resets to 12h from first_response_time_cs when Info Provided is set.
   const slaDeadline = activePeriodStart ? addWorkingHours(activePeriodStart, SLA_HOURS) : null;
 
   return {
@@ -91,7 +97,8 @@ function computeTicketMetrics(row) {
     creatorEmail: row['ticket_creater_email'],
     assigneeName: row['assignee_Name'],
     assigneeEmail: row['assignee_email_id'],
-    createdAt,
+    createdAt,          // original creation time (for date filter & display)
+    activePeriodStart,  // TAT window start (first_response_time or CS restart)
     updatedAt,
     priority: row['priority'],
     currentStatus: status,
@@ -103,8 +110,21 @@ function computeTicketMetrics(row) {
     tatPaused,
     slaBreached,
     slaDeadline,
+    // First response track (overall)
+    firstActivityEmail: row['first_activity_email_id'],
+    firstResponseTime,
     firstResponseTAT,
     firstResponseGroup: row['first_response_TAT_group'],
+    // CS cycle track (resets after Info Provided)
+    firstActivityEmailCs: row['first_activity_email_id_cs'],
+    firstResponseTimeCs,
+    firstResponseTATCs: parseFloat(row['first_response_TAT_cs']) || null,
+    lastResponseTimeCs: parseDate(row['last_response_time_cs']),
+    // Info cycle track
+    firstActivityEmailInfo: row['first_activity_email_id_info'],
+    firstResponseTimeInfo: parseDate(row['first_response_time_info']),
+    lastResponseTimeInfo: parseDate(row['last_response_time_info']),
+    // Other
     tatGroup: row['tat_group'],
     lastReopenedDate: parseDate(row['last_reopened_date']),
     lastReopenedBy: row['last_reopened_by'],
@@ -118,10 +138,6 @@ function computeTicketMetrics(row) {
     lastUpdatedBy: row['activity_by'] || null,
     lastActivityName: row['activity_name'] || null,
     lastActivitySection: row['activity_section'] || null,
-    // info suffix = first response track
-    newCreationTimestampInfo: parseDate(row['new_creation_timestamp_info']),
-    // cs suffix = last response track
-    newCreationTimestampCs: parseDate(row['new_creation_timestamp_cs']),
   };
 }
 

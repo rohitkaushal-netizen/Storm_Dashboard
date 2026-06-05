@@ -20,8 +20,8 @@ function fmtDuration(totalMinutes) {
 }
 
 export default function DeadlineCell({ ticket, now }) {
-  const { slaDeadline, isOpen, isClosed, createdAt, workingTAT, tatPaused } = ticket;
-  if (!slaDeadline || !createdAt) return <span className="dl-na">—</span>;
+  const { slaDeadline, isClosed, activePeriodStart, workingTAT, tatPaused } = ticket;
+  if (!slaDeadline || !activePeriodStart) return <span className="dl-na">—</span>;
 
   // Info Required: TAT clock is paused — show frozen progress, no countdown
   if (tatPaused) {
@@ -59,8 +59,8 @@ export default function DeadlineCell({ ticket, now }) {
   const minLeft = msLeft / 60000;
   const isOverdue = msLeft < 0;
 
-  // Working hours consumed so far (for the progress bar)
-  const consumed = workingHoursBetween(createdAt, now);
+  // Working hours consumed so far (for the progress bar), measured from TAT window start
+  const consumed = workingHoursBetween(activePeriodStart, now);
   const pct = Math.min((consumed / SLA_HOURS) * 100, 100);
 
   let urgency = 'dl-ok';
