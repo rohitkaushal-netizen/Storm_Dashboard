@@ -1,8 +1,8 @@
-// Working hours: 9:30 AM – 6:30 PM IST, Mon–Fri
-// 1 working day = 9 hours. SLA = 12 working hours = 1 full day + 3 hours next day.
+// Working hours: 9:30 AM – 5:30 PM IST, Mon–Fri
+// 1 working day = 8 hours.
 
 const WORK_START_H = 9,  WORK_START_M = 30;
-const WORK_END_H   = 18, WORK_END_M   = 30;
+const WORK_END_H   = 17, WORK_END_M   = 30;
 
 function isWeekday(date) {
   const d = date.getDay();
@@ -11,7 +11,7 @@ function isWeekday(date) {
 
 // Advance cursor to the next valid working moment:
 //   - before 9:30 AM on a weekday  → snap to 9:30 AM same day
-//   - after 6:30 PM on a weekday   → snap to 9:30 AM next working day
+//   - after 5:30 PM on a weekday   → snap to 9:30 AM next working day
 //   - on a weekend                 → snap to 9:30 AM next Monday
 function snapToWorkStart(cursor) {
   // skip weekends
@@ -59,8 +59,8 @@ export function workingHoursBetween(start, end) {
 // Given a start Date, return the Date that is exactly `hoursToAdd`
 // working hours later (skipping nights, weekends).
 //
-// Example: 9:30 AM May 14 + 12 working hours → 12:30 PM May 15
-//          5:00 PM Thu + 12 working hours → 11:00 AM following Mon
+// Example: 9:30 AM Wed + 9 working hours → 10:30 AM Thu (8h used Wed, 1h carries over)
+//          4:00 PM Fri + 9 working hours → 5:00 PM following Mon (weekend skipped)
 export function addWorkingHours(start, hoursToAdd) {
   if (!start) return null;
   let remaining = hoursToAdd * 60; // work in minutes
