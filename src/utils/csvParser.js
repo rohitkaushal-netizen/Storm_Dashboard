@@ -1,5 +1,11 @@
 import Papa from 'papaparse';
 import { workingHoursBetween, addWorkingHours, SLA_HOURS } from './workingHours';
+import { isTeamMember } from './teamConfig';
+
+// Dispatcher/triage assignees — tickets often land here first before being
+// routed to the actual handler. A handoff FROM one of these names TO any
+// team member resets the TAT window (see DISPATCHER_NAMES usage below).
+const DISPATCHER_NAMES = new Set(['Prakash Singh Kanyal', 'Saurabh Sippy']);
 
 // Statuses that count as "open" (pending resolution)
 export const OPEN_STATUSES = ['Open', 'Reopened', 'In Progress', 'Info Required', 'Info Provided', 'New', null, ''];
@@ -107,10 +113,16 @@ function computeTicketFromEvents(ticketId, rawEvents) {
       }
       wasPaused = nowPaused;
     } else if (e['name'] === 'Assignee Changed' && !wasPaused) {
-      activeWindows.push({ start: windowStart, end: e._at });
-      activePeriodStart = e._at;
-      windowStart = e._at;
-      tag = 'reassign';
+      // Only a handoff from a dispatcher (Prakash/Saurabh) to an actual team
+      // member resets the window — team-to-team or other reassignments don't.
+      const fromDispatcher = DISPATCHER_NAMES.has(e['old_value']);
+      const toTeamMember = isTeamMember(e['new_value']);
+      if (fromDispatcher && toTeamMember) {
+        activeWindows.push({ start: windowStart, end: e._at });
+        activePeriodStart = e._at;
+        windowStart = e._at;
+        tag = 'reassign';
+      }
     }
     resetTimeline.push({
       at: e._at,
