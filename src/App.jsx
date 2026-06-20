@@ -149,7 +149,7 @@ export default function App() {
 
       {hasData && (
         <footer className="app-footer">
-          SLA: {SLA_HOURS} working hours (8h target + 1h grace) · 9:30 AM – 5:30 PM IST (Mon–Fri) · Auto-refreshes every 4 hours
+          SLA: {SLA_HOURS} working hours · 9:30 AM – 5:30 PM IST (Mon–Fri) · Auto-refreshes every 4 hours
         </footer>
       )}
     </div>

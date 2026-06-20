@@ -7,28 +7,28 @@ import { isTeamMember } from '../utils/teamConfig';
 import TicketDrilldown from '../components/TicketDrilldown';
 import { SLA_HOURS } from '../utils/workingHours';
 
-// SLA target is 8 working hours with a 1-hour grace period — breach only
-// past 9 working hours (matches SLA_HOURS in workingHours.js). The 6-9h
-// bucket absorbs everything below the 9h breach line so the line itself
-// always falls exactly on a bucket boundary.
+// SLA target is a strict 8 working hours (matches SLA_HOURS in
+// workingHours.js) — the 6-8h bucket is the last compliant bucket, and
+// 8-10h is the first breach bucket.
 const BUCKETS = [
   { key: '0-2h',   label: '0–2h',   min: 0,  max: 2   },
   { key: '2-4h',   label: '2–4h',   min: 2,  max: 4   },
   { key: '4-6h',   label: '4–6h',   min: 4,  max: 6   },
-  { key: '6-9h',   label: '6–9h',   min: 6,  max: 9   },
-  { key: '9-12h',  label: '9–12h',  min: 9,  max: 12  },
+  { key: '6-8h',   label: '6–8h',   min: 6,  max: 8   },
+  { key: '8-10h',  label: '8–10h',  min: 8,  max: 10  },
+  { key: '10-12h', label: '10–12h', min: 10, max: 12  },
   { key: '12-24h', label: '12–24h', min: 12, max: 24  },
   { key: '24-48h', label: '24–48h', min: 24, max: 48  },
   { key: '48-96h', label: '48–96h', min: 48, max: 96  },
   { key: '96h+',   label: '96h+',   min: 96, max: Infinity },
 ];
 
-// First index that counts as a breach bucket (9h+) — used for highlighting.
+// First index that counts as a breach bucket (8h+) — used for highlighting.
 const BREACH_INDEX = 4;
 
 const BUCKET_COLORS = [
   '#10b981', '#34d399', '#6ee7b7', '#fbbf24',
-  '#f97316', '#ef4444', '#dc2626', '#b91c1c', '#7f1d1d',
+  '#f59e0b', '#f97316', '#ef4444', '#dc2626', '#b91c1c', '#7f1d1d',
 ];
 
 function getBucket(tat) {

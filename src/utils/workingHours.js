@@ -92,9 +92,8 @@ export function addWorkingHours(start, hoursToAdd) {
   return cursor;
 }
 
-// Target is 8 working hours, but a 1-hour grace period applies everywhere
-// (deadline, breach flag, counts) — only flagged breached past 9 working hours.
-export const SLA_HOURS = 9;
+// SLA target is a strict 8 working hours — breached past 8h, no grace.
+export const SLA_HOURS = 8;
 
 export function isSLABreached(workingHours) {
   return workingHours > SLA_HOURS;
