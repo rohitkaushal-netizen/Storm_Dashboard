@@ -35,16 +35,16 @@ export default function TeamTATView({ tickets }) {
   const [highlight, setHighlight] = useState(null);
 
   const { members, chartData, totals } = useMemo(() => {
-    // Filter to team members (by email) with a valid working TAT
+    // Filter to team members (by full name) with a valid working TAT
     const valid = tickets.filter(
-      t => isTeamMember(t.assigneeEmail) && t.workingTAT != null && t.assigneeName
+      t => isTeamMember(t.assigneeName) && t.workingTAT != null && t.assigneeName
     );
 
     const memberMap = {};
     for (const t of valid) {
       const name = t.assigneeName;
       if (!memberMap[name]) {
-        memberMap[name] = { name, email: t.assigneeEmail, tickets: [], buckets: {} };
+        memberMap[name] = { name, tickets: [], buckets: {} };
         BUCKETS.forEach(b => { memberMap[name].buckets[b.key] = []; });
       }
       memberMap[name].buckets[getBucket(t.workingTAT)].push(t);

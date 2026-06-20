@@ -1,17 +1,14 @@
 import { useState } from 'react';
 import { getStatusColor } from '../utils/csvParser';
-import { ExternalLink, ChevronUp, ChevronDown } from 'lucide-react';
+import { ChevronUp, ChevronDown } from 'lucide-react';
 import DeadlineCell from './DeadlineCell';
 import { useNow } from '../hooks/useNow';
 
 const COLS = [
-  { key: 'ticketKey',     label: 'Ticket' },
-  { key: 'shortCode',     label: 'Type' },
-  { key: 'summary',       label: 'Summary' },
+  { key: 'id',            label: 'Ticket ID' },
   { key: 'creatorName',   label: 'Raised By' },
   { key: 'assigneeName',  label: 'Assignee' },
   { key: 'currentStatus', label: 'Status' },
-  { key: 'priority',      label: 'Priority' },
   { key: 'workingTAT',    label: 'Working TAT (hrs)' },
   { key: 'slaDeadline',   label: 'SLA Deadline / Status' },
   { key: 'createdAt',     label: 'Created' },
@@ -77,24 +74,16 @@ export default function TicketTable({ tickets, title }) {
               <tr key={t.id || i} className={t.slaBreached && t.isOpen ? 'row-sla-breach' : ''}>
                 {COLS.map(c => (
                   <td key={c.key} className={c.key === 'slaDeadline' ? 'col-deadline-td' : ''}>
-                    {c.key === 'ticketKey' && t.ticketLink ? (
-                      <a href={t.ticketLink} target="_blank" rel="noreferrer" className="ticket-link">
-                        {t.ticketKey} <ExternalLink size={11} />
-                      </a>
-                    ) : c.key === 'currentStatus' ? (
+                    {c.key === 'currentStatus' ? (
                       <span className="status-badge" style={{ background: getStatusColor(t.currentStatus) }}>
                         {t.currentStatus || 'New'}
                       </span>
-                    ) : c.key === 'priority' ? (
-                      <span className={`priority-badge priority-${(t.priority || '').toLowerCase()}`}>
-                        {t.priority || '—'}
-                      </span>
                     ) : c.key === 'lastUpdatedBy' ? (
                       t.lastUpdatedBy
-                        ? <span className="updated-by-pill" title={t.lastActivitySection || ''}>
+                        ? <span className="updated-by-pill" title={t.lastActivityName || ''}>
                             {t.lastUpdatedBy}
-                            {t.lastActivitySection && (
-                              <span className="updated-by-action"> · {t.lastActivitySection}</span>
+                            {t.lastActivityName && (
+                              <span className="updated-by-action"> · {t.lastActivityName}</span>
                             )}
                           </span>
                         : '—'

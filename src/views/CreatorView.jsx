@@ -39,13 +39,7 @@ export default function CreatorView({ tickets }) {
       .map(([name, arr]) => ({ name: name || 'New', count: arr.length, color: getStatusColor(name) }))
       .sort((a, b) => b.count - a.count);
 
-    const byDept = groupBy(filtered, 'department');
-    const deptData = Object.entries(byDept)
-      .map(([name, arr]) => ({ name, count: arr.length }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 8);
-
-    return { open, closed, infoReq, breached, creatorData, statusData, deptData };
+    return { open, closed, infoReq, breached, creatorData, statusData };
   }, [filtered]);
 
   return (
@@ -95,19 +89,6 @@ export default function CreatorView({ tickets }) {
                 />
                 <Bar dataKey="open" name="Open" stackId="a" fill="#3b82f6" />
                 <Bar dataKey="closed" name="Closed" stackId="a" fill="#10b981" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-
-          <div className="chart-card">
-            <h3>By Department</h3>
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={stats.deptData} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                <XAxis type="number" />
-                <YAxis dataKey="name" type="category" width={120} tick={{ fontSize: 11 }} />
-                <Tooltip />
-                <Bar dataKey="count" fill="#6366f1" radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>

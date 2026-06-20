@@ -36,17 +36,10 @@ export default function ManagerView({ tickets }) {
       }))
       .sort((a, b) => b.open - a.open);
 
-    // Ticket type breakdown
-    const byType = groupBy(tickets, 'shortCode');
-    const typeData = Object.entries(byType)
-      .map(([name, arr]) => ({ name, count: arr.length }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 10);
-
     // TAT distribution for closed tickets
     const tatBuckets = { '0-4h': 0, '4-8h': 0, '8-12h': 0, '12-24h': 0, '24h+': 0 };
     closed.forEach(t => {
-      const h = t.workingTAT || t.tatHours || 0;
+      const h = t.workingTAT || 0;
       if (h <= 4) tatBuckets['0-4h']++;
       else if (h <= 8) tatBuckets['4-8h']++;
       else if (h <= 12) tatBuckets['8-12h']++;
@@ -55,11 +48,7 @@ export default function ManagerView({ tickets }) {
     });
     const tatData = Object.entries(tatBuckets).map(([name, count]) => ({ name, count }));
 
-    // Priority breakdown for open breached tickets
-    const urgentBreached = breached.filter(t => t.priority === 'Urgent').length;
-    const highBreached = breached.filter(t => t.priority === 'High').length;
-
-    return { open, closed, breached, infoReq, reopened, statusData, assigneeData, typeData, tatData, urgentBreached, highBreached };
+    return { open, closed, breached, infoReq, reopened, statusData, assigneeData, tatData };
   }, [tickets]);
 
   const slaBreachRate = tickets.length ? ((stats.breached.length / tickets.length) * 100).toFixed(1) : 0;
@@ -78,7 +67,6 @@ export default function ManagerView({ tickets }) {
         <StatCard label="Info Required" value={stats.infoReq.length} color="#f97316" />
         <StatCard label="Avg Working TAT" value={avgTAT + 'h'} sub={`SLA = ${SLA_HOURS}h`} color="#8b5cf6" />
         <StatCard label="Reopened Tickets" value={stats.reopened.length} color="#f59e0b" />
-        <StatCard label="Urgent SLA Breaches" value={stats.urgentBreached} color="#dc2626" />
       </div>
 
       <div className="charts-grid">
@@ -107,19 +95,6 @@ export default function ManagerView({ tickets }) {
               <Legend />
               <Bar dataKey="open" name="Open" fill="#3b82f6" radius={[0, 4, 4, 0]} />
               <Bar dataKey="breached" name="SLA Breached" fill="#ef4444" radius={[0, 4, 4, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        <div className="chart-card">
-          <h3>Ticket Type Breakdown</h3>
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={stats.typeData}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-              <YAxis />
-              <Tooltip />
-              <Bar dataKey="count" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>

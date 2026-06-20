@@ -1,13 +1,7 @@
 import { useMemo } from 'react';
-import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
-  PieChart, Pie, Cell, Legend, RadialBarChart, RadialBar
-} from 'recharts';
 import StatCard from '../components/StatCard';
-import { groupBy, getStatusColor } from '../utils/csvParser';
+import { groupBy } from '../utils/csvParser';
 import { SLA_HOURS } from '../utils/workingHours';
-
-const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#3b82f6'];
 
 export default function LeadershipView({ tickets }) {
   const stats = useMemo(() => {
@@ -15,7 +9,6 @@ export default function LeadershipView({ tickets }) {
     const open = tickets.filter(t => t.isOpen);
     const closed = tickets.filter(t => t.isClosed);
     const breached = tickets.filter(t => t.slaBreached);
-    const urgent = tickets.filter(t => t.priority === 'Urgent');
     const reopened = tickets.filter(t => t.totalReopenedCount > 0);
 
     const slaBreachRate = total ? ((breached.length / total) * 100).toFixed(1) : 0;
@@ -50,35 +43,7 @@ export default function LeadershipView({ tickets }) {
       })
       .sort((a, b) => b.total - a.total);
 
-    // Tickets by paid status
-    const byPaid = groupBy(tickets, 'paidStatus');
-    const paidData = Object.entries(byPaid).map(([name, arr]) => ({
-      name: name || 'Unknown',
-      value: arr.length,
-    }));
-
-    // SLA compliance by ticket type
-    const byType = groupBy(tickets, 'shortCode');
-    const typeCompliance = Object.entries(byType)
-      .map(([name, arr]) => ({
-        name,
-        total: arr.length,
-        compliant: arr.filter(t => !t.slaBreached).length,
-        breached: arr.filter(t => t.slaBreached).length,
-        breachRate: arr.length ? ((arr.filter(t => t.slaBreached).length / arr.length) * 100).toFixed(0) : 0,
-      }))
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 10);
-
-    // Overall status funnel
-    const statusFunnel = [
-      { name: 'Total', value: total, fill: '#6366f1' },
-      { name: 'Open', value: open.length, fill: '#3b82f6' },
-      { name: 'Breached SLA', value: breached.length, fill: '#ef4444' },
-      { name: 'Closed', value: closed.length, fill: '#10b981' },
-    ];
-
-    return { total, open, closed, breached, urgent, reopened, slaBreachRate, closureRate, avgTAT, teamPerf, paidData, typeCompliance, statusFunnel };
+    return { total, open, closed, breached, reopened, slaBreachRate, closureRate, avgTAT, teamPerf };
   }, [tickets]);
 
   return (
@@ -109,7 +74,6 @@ export default function LeadershipView({ tickets }) {
         <StatCard label="Open Tickets" value={stats.open.length} color="#3b82f6" />
         <StatCard label="Closed Tickets" value={stats.closed.length} color="#10b981" />
         <StatCard label="SLA Breached" value={stats.breached.length} sub={`>${SLA_HOURS}h working time`} color="#ef4444" />
-        <StatCard label="Urgent Priority" value={stats.urgent.length} color="#dc2626" />
         <StatCard label="Reopened" value={stats.reopened.length} color="#f59e0b" />
       </div>
 
@@ -151,35 +115,6 @@ export default function LeadershipView({ tickets }) {
               </tbody>
             </table>
           </div>
-        </div>
-
-        <div className="chart-card">
-          <h3>SLA Breach by Ticket Type</h3>
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={stats.typeCompliance} layout="vertical">
-              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-              <XAxis type="number" />
-              <YAxis dataKey="name" type="category" width={90} tick={{ fontSize: 11 }} />
-              <Tooltip />
-              <Legend />
-              <Bar dataKey="compliant" name="On-time" stackId="a" fill="#10b981" />
-              <Bar dataKey="breached" name="Breached" stackId="a" fill="#ef4444" radius={[0, 4, 4, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        <div className="chart-card">
-          <h3>Paid vs Unpaid Projects</h3>
-          <ResponsiveContainer width="100%" height={240}>
-            <PieChart>
-              <Pie data={stats.paidData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} label={({ name, value }) => `${name}: ${value}`}>
-                {stats.paidData.map((_, i) => (
-                  <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip />
-            </PieChart>
-          </ResponsiveContainer>
         </div>
       </div>
     </div>
