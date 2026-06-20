@@ -5,23 +5,30 @@ import {
 } from 'recharts';
 import { isTeamMember } from '../utils/teamConfig';
 import TicketDrilldown from '../components/TicketDrilldown';
+import { SLA_HOURS } from '../utils/workingHours';
 
+// SLA target is 8 working hours with a 1-hour grace period — breach only
+// past 9 working hours (matches SLA_HOURS in workingHours.js). The 6-9h
+// bucket absorbs everything below the 9h breach line so the line itself
+// always falls exactly on a bucket boundary.
 const BUCKETS = [
   { key: '0-2h',   label: '0–2h',   min: 0,  max: 2   },
   { key: '2-4h',   label: '2–4h',   min: 2,  max: 4   },
   { key: '4-6h',   label: '4–6h',   min: 4,  max: 6   },
-  { key: '6-8h',   label: '6–8h',   min: 6,  max: 8   },
-  { key: '8-10h',  label: '8–10h',  min: 8,  max: 10  },
-  { key: '10-12h', label: '10–12h', min: 10, max: 12  },
+  { key: '6-9h',   label: '6–9h',   min: 6,  max: 9   },
+  { key: '9-12h',  label: '9–12h',  min: 9,  max: 12  },
   { key: '12-24h', label: '12–24h', min: 12, max: 24  },
   { key: '24-48h', label: '24–48h', min: 24, max: 48  },
   { key: '48-96h', label: '48–96h', min: 48, max: 96  },
   { key: '96h+',   label: '96h+',   min: 96, max: Infinity },
 ];
 
+// First index that counts as a breach bucket (9h+) — used for highlighting.
+const BREACH_INDEX = 4;
+
 const BUCKET_COLORS = [
   '#10b981', '#34d399', '#6ee7b7', '#fbbf24',
-  '#f59e0b', '#f97316', '#ef4444', '#dc2626', '#b91c1c', '#7f1d1d',
+  '#f97316', '#ef4444', '#dc2626', '#b91c1c', '#7f1d1d',
 ];
 
 function getBucket(tat) {
@@ -123,7 +130,7 @@ export default function TeamTATView({ tickets }) {
         {BUCKETS.map((b, i) => (
           <button
             key={b.key}
-            className={`bucket-chip ${highlight === b.key ? 'active' : ''} ${i >= 6 ? 'breach' : ''}`}
+            className={`bucket-chip ${highlight === b.key ? 'active' : ''} ${i >= BREACH_INDEX ? 'breach' : ''}`}
             style={{ '--chip-color': BUCKET_COLORS[i] }}
             onClick={() => setHighlight(v => v === b.key ? null : b.key)}
             title={`${totals[b.key]} tickets in this range`}
@@ -170,7 +177,7 @@ export default function TeamTATView({ tickets }) {
                 {BUCKETS.map((b, i) => (
                   <th
                     key={b.key}
-                    className={`col-bucket ${highlight === b.key ? 'col-highlight' : ''} ${i >= 6 ? 'col-breach' : ''}`}
+                    className={`col-bucket ${highlight === b.key ? 'col-highlight' : ''} ${i >= BREACH_INDEX ? 'col-breach' : ''}`}
                     onClick={() => setHighlight(v => v === b.key ? null : b.key)}
                     title="Click to highlight"
                   >
@@ -186,7 +193,7 @@ export default function TeamTATView({ tickets }) {
                 const avg = total
                   ? (m.tickets.reduce((s, t) => s + t.workingTAT, 0) / total).toFixed(1)
                   : '—';
-                const slaBreached = BUCKETS.slice(6).reduce((s, b) => s + m.buckets[b.key].length, 0);
+                const slaBreached = BUCKETS.slice(BREACH_INDEX).reduce((s, b) => s + m.buckets[b.key].length, 0);
                 const breachPct = total ? ((slaBreached / total) * 100).toFixed(0) : 0;
 
                 return (
@@ -204,7 +211,7 @@ export default function TeamTATView({ tickets }) {
                     </td>
                     <td><strong>{total}</strong></td>
                     <td>
-                      <span className={`avg-badge ${parseFloat(avg) > 12 ? 'avg-red' : parseFloat(avg) > 8 ? 'avg-yellow' : 'avg-green'}`}>
+                      <span className={`avg-badge ${parseFloat(avg) > SLA_HOURS ? 'avg-red' : parseFloat(avg) > SLA_HOURS * 0.66 ? 'avg-yellow' : 'avg-green'}`}>
                         {avg}h
                       </span>
                     </td>
@@ -214,7 +221,7 @@ export default function TeamTATView({ tickets }) {
                       return (
                         <td
                           key={b.key}
-                          className={`col-bucket ${highlight === b.key ? 'col-highlight' : ''} ${i >= 6 ? 'col-breach' : ''} ${cnt > 0 ? 'col-clickable' : ''}`}
+                          className={`col-bucket ${highlight === b.key ? 'col-highlight' : ''} ${i >= BREACH_INDEX ? 'col-breach' : ''} ${cnt > 0 ? 'col-clickable' : ''}`}
                           onClick={() => cnt > 0 && setDrilldown({
                             title: `${m.name} · ${b.label} bucket`,
                             tickets: m.buckets[b.key],
@@ -239,7 +246,7 @@ export default function TeamTATView({ tickets }) {
                 <td className="col-name"><strong>All Team</strong></td>
                 <td><strong>{totals.total}</strong></td>
                 <td>
-                  <span className={`avg-badge ${parseFloat(totals.avg) > 12 ? 'avg-red' : parseFloat(totals.avg) > 8 ? 'avg-yellow' : 'avg-green'}`}>
+                  <span className={`avg-badge ${parseFloat(totals.avg) > SLA_HOURS ? 'avg-red' : parseFloat(totals.avg) > SLA_HOURS * 0.66 ? 'avg-yellow' : 'avg-green'}`}>
                     {totals.avg}h
                   </span>
                 </td>
@@ -247,7 +254,7 @@ export default function TeamTATView({ tickets }) {
                   const cnt = totals[b.key];
                   const pct = totals.total ? ((cnt / totals.total) * 100).toFixed(0) : 0;
                   return (
-                    <td key={b.key} className={`col-bucket ${i >= 6 ? 'col-breach' : ''}`}>
+                    <td key={b.key} className={`col-bucket ${i >= BREACH_INDEX ? 'col-breach' : ''}`}>
                       {cnt > 0
                         ? <div className="bucket-cell">
                             <span className="bucket-count">{cnt}</span>

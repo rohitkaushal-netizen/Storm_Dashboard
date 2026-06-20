@@ -6,6 +6,7 @@ import LeadershipView from './views/LeadershipView';
 import TeamTATView from './views/TeamTATView';
 import { BarChart2, Users, TrendingUp, RefreshCw, Clock, CheckCircle, AlertCircle } from 'lucide-react';
 import { fetchSheetTickets, REFRESH_INTERVAL_MS } from './services/sheetsService';
+import { SLA_HOURS } from './utils/workingHours';
 import './App.css';
 
 const TABS = [
@@ -148,7 +149,7 @@ export default function App() {
 
       {hasData && (
         <footer className="app-footer">
-          SLA: 12 working hours · 9:30 AM – 6:30 PM IST (Mon–Fri) · Auto-refreshes every 4 hours
+          SLA: {SLA_HOURS} working hours (8h target + 1h grace) · 9:30 AM – 6:30 PM IST (Mon–Fri) · Auto-refreshes every 4 hours
         </footer>
       )}
     </div>
