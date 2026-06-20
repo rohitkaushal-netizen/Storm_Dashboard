@@ -3,6 +3,7 @@ export const TEAM_EMAILS = new Set([
   'akash.manna@housing.com',
   'bheeshm.singh@housing.com',
   'gaurav.tyagi@housing.com',
+  'gaurav.tyagi2@housing.com',
   'mudit.singh@housing.com',
   'jaiprakash.mishra@housing.com',
   'sanjeev.kumar3@housing.com',
