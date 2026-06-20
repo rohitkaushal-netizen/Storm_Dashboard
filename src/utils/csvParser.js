@@ -76,11 +76,22 @@ function computeTicketFromEvents(ticketId, rawEvents) {
   // Active period start: replay the status timeline. Every time the ticket
   // comes OUT of "Info Required", a fresh SLA window begins from that moment.
   // If it never paused, the window starts at creation.
+  //
+  // Simultaneously build the full list of active (non-paused) windows, so the
+  // UI can show the entire calculation journey — not just the current window.
   let activePeriodStart = createdAt;
   let wasPaused = false;
+  let windowStart = createdAt;
+  const activeWindows = [];
   for (const se of statusEvents) {
     const nowPaused = se['new_value'] === 'Info Required';
-    if (wasPaused && !nowPaused) activePeriodStart = se._at;
+    if (!wasPaused && nowPaused) {
+      activeWindows.push({ start: windowStart, end: se._at });
+    }
+    if (wasPaused && !nowPaused) {
+      activePeriodStart = se._at;
+      windowStart = se._at;
+    }
     wasPaused = nowPaused;
   }
 
@@ -92,6 +103,19 @@ function computeTicketFromEvents(ticketId, rawEvents) {
   if (tatPaused)      endTime = statusEvents[statusEvents.length - 1]._at;
   else if (isClosed)  endTime = updatedAt;
   else                endTime = new Date();
+
+  // Trailing window (the one still running, or the one that ended at closure)
+  if (!wasPaused) {
+    activeWindows.push({ start: windowStart, end: endTime });
+  }
+
+  const windows = activeWindows.map((w, i) => ({
+    start: w.start,
+    end: w.end,
+    hours: workingHoursBetween(w.start, w.end),
+    isCurrent: i === activeWindows.length - 1,
+  }));
+  const cumulativeWorkingTAT = windows.reduce((s, w) => s + w.hours, 0);
 
   const workingTAT = activePeriodStart ? workingHoursBetween(activePeriodStart, endTime) : null;
   const slaDeadline = activePeriodStart ? addWorkingHours(activePeriodStart, SLA_HOURS) : null;
@@ -109,6 +133,8 @@ function computeTicketFromEvents(ticketId, rawEvents) {
     isOpen,
     isClosed,
     workingTAT,
+    cumulativeWorkingTAT,
+    windows,
     tatPaused,
     slaBreached,
     slaDeadline,
@@ -117,6 +143,20 @@ function computeTicketFromEvents(ticketId, rawEvents) {
     totalReopenedCount,
     lastReopenedDate,
     lastReopenedBy,
+    // Full event trail, for the "calculation journey" drill-down view
+    statusTimeline: statusEvents.map(se => ({
+      at: se._at,
+      from: se['old_value'] === 'null' ? null : se['old_value'],
+      to: se['new_value'],
+      by: se['full_name'] || null,
+    })),
+    events: events.map(e => ({
+      at: e._at,
+      name: e['name'],
+      from: e['old_value'] === 'null' ? null : e['old_value'],
+      to: e['new_value'] === 'null' ? null : e['new_value'],
+      by: e['full_name'] || null,
+    })),
   };
 }
 

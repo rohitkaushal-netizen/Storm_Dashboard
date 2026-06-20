@@ -4,6 +4,7 @@ import {
   CartesianGrid,
 } from 'recharts';
 import { isTeamMember } from '../utils/teamConfig';
+import TicketDrilldown from '../components/TicketDrilldown';
 
 const BUCKETS = [
   { key: '0-2h',   label: '0–2h',   min: 0,  max: 2   },
@@ -33,6 +34,7 @@ function getBucket(tat) {
 export default function TeamTATView({ tickets }) {
   const [mode, setMode] = useState('count');
   const [highlight, setHighlight] = useState(null);
+  const [drilldown, setDrilldown] = useState(null); // { title, tickets }
 
   const { members, chartData, totals } = useMemo(() => {
     // Filter to team members (by full name) with a valid working TAT
@@ -212,7 +214,12 @@ export default function TeamTATView({ tickets }) {
                       return (
                         <td
                           key={b.key}
-                          className={`col-bucket ${highlight === b.key ? 'col-highlight' : ''} ${i >= 6 ? 'col-breach' : ''}`}
+                          className={`col-bucket ${highlight === b.key ? 'col-highlight' : ''} ${i >= 6 ? 'col-breach' : ''} ${cnt > 0 ? 'col-clickable' : ''}`}
+                          onClick={() => cnt > 0 && setDrilldown({
+                            title: `${m.name} · ${b.label} bucket`,
+                            tickets: m.buckets[b.key],
+                          })}
+                          title={cnt > 0 ? `Click to view ${m.name}'s ${cnt} tickets in ${b.label}` : ''}
                         >
                           {cnt > 0
                             ? <div className="bucket-cell">
@@ -255,6 +262,14 @@ export default function TeamTATView({ tickets }) {
           </table>
         </div>
       </div>
+
+      {drilldown && (
+        <TicketDrilldown
+          title={drilldown.title}
+          tickets={drilldown.tickets}
+          onClose={() => setDrilldown(null)}
+        />
+      )}
     </div>
   );
 }
