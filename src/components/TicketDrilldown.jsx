@@ -23,10 +23,11 @@ function fmtShort(d) {
 // One ticket's full calculation journey: status timeline + window breakdown + final numbers
 function TicketJourney({ ticket }) {
   const t = ticket;
+  const lastStatusAt = t.statusTimeline[t.statusTimeline.length - 1]?.at;
   return (
     <div className="journey-panel">
       <div className="journey-section">
-        <h4>Status Timeline</h4>
+        <h4>Status &amp; Assignee Timeline</h4>
         <div className="journey-timeline">
           <div className="journey-event journey-event--create">
             <span className="journey-dot" />
@@ -35,16 +36,19 @@ function TicketJourney({ ticket }) {
               <div className="journey-event-time">{fmt(t.createdAt)}</div>
             </div>
           </div>
-          {t.statusTimeline.map((se, i) => (
-            <div key={i} className={`journey-event ${se.to === 'Info Required' ? 'journey-event--pause' : se.from === 'Info Required' ? 'journey-event--resume' : ''}`}>
-              <span className="journey-dot" style={{ background: getStatusColor(se.to) }} />
+          {t.resetTimeline.map((e, i) => (
+            <div key={i} className={`journey-event ${e.tag === 'pause' ? 'journey-event--pause' : e.tag === 'resume' || e.tag === 'reassign' ? 'journey-event--resume' : ''}`}>
+              <span className="journey-dot" style={{ background: e.type === 'status' ? getStatusColor(e.to) : '#6366f1' }} />
               <div>
                 <div className="journey-event-title">
-                  {se.from || 'New'} → <strong>{se.to}</strong>
-                  {se.from === 'Info Required' && <span className="journey-tag journey-tag--resume">window starts here</span>}
-                  {se.to === 'Info Required' && <span className="journey-tag journey-tag--pause">clock paused</span>}
+                  {e.type === 'status'
+                    ? <>{e.from || 'New'} → <strong>{e.to}</strong></>
+                    : <>Reassigned: {e.from} → <strong>{e.to}</strong></>}
+                  {e.tag === 'resume' && <span className="journey-tag journey-tag--resume">window starts here</span>}
+                  {e.tag === 'pause' && <span className="journey-tag journey-tag--pause">clock paused</span>}
+                  {e.tag === 'reassign' && <span className="journey-tag journey-tag--resume">window restarts (reassigned)</span>}
                 </div>
-                <div className="journey-event-time">{fmt(se.at)} {se.by && `· by ${se.by}`}</div>
+                <div className="journey-event-time">{fmt(e.at)} {e.by && `· by ${e.by}`}</div>
               </div>
             </div>
           ))}
@@ -53,7 +57,7 @@ function TicketJourney({ ticket }) {
               <span className="journey-dot journey-dot--live" />
               <div>
                 <div className="journey-event-title">Currently paused (Info Required)</div>
-                <div className="journey-event-time">Clock frozen since {fmt(t.statusTimeline[t.statusTimeline.length - 1]?.at)}</div>
+                <div className="journey-event-time">Clock frozen since {fmt(lastStatusAt)}</div>
               </div>
             </div>
           )}
@@ -61,7 +65,7 @@ function TicketJourney({ ticket }) {
       </div>
 
       <div className="journey-section">
-        <h4>Active Windows (working hours, excludes Info Required pauses)</h4>
+        <h4>Active Windows (working hours, excludes Info Required pauses and resets on reassignment)</h4>
         <table className="journey-windows">
           <thead>
             <tr><th>#</th><th>Start</th><th>End</th><th>Working Hours</th><th></th></tr>

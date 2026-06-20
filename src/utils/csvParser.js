@@ -73,26 +73,53 @@ function computeTicketFromEvents(ticketId, rawEvents) {
   // TAT is paused while waiting for customer info — team not penalised
   const tatPaused = isOpen && currentStatus === 'Info Required';
 
-  // Active period start: replay the status timeline. Every time the ticket
-  // comes OUT of "Info Required", a fresh SLA window begins from that moment.
-  // If it never paused, the window starts at creation.
+  // Active period start: replay status + assignee changes in chronological
+  // order. A fresh SLA window begins whenever:
+  //   - the ticket comes OUT of "Info Required" (info was provided), or
+  //   - the assignee changes while the clock is running (the new owner
+  //     gets a clean window from the moment they actually receive it —
+  //     time spent with a prior/wrong assignee doesn't count against them)
+  // Assignee changes that happen WHILE paused (mid Info-Required) don't
+  // affect anything — the clock is already stopped.
   //
-  // Simultaneously build the full list of active (non-paused) windows, so the
-  // UI can show the entire calculation journey — not just the current window.
+  // Simultaneously build the full list of active (non-paused) windows, and
+  // a merged reset timeline, so the UI can show the entire calculation
+  // journey — not just the current window.
+  const resetEvents = events.filter(e => e['name'] === 'Status Changed' || e['name'] === 'Assignee Changed');
+
   let activePeriodStart = createdAt;
   let wasPaused = false;
   let windowStart = createdAt;
   const activeWindows = [];
-  for (const se of statusEvents) {
-    const nowPaused = se['new_value'] === 'Info Required';
-    if (!wasPaused && nowPaused) {
-      activeWindows.push({ start: windowStart, end: se._at });
+  const resetTimeline = [];
+
+  for (const e of resetEvents) {
+    let tag = null;
+    if (e['name'] === 'Status Changed') {
+      const nowPaused = e['new_value'] === 'Info Required';
+      if (!wasPaused && nowPaused) {
+        activeWindows.push({ start: windowStart, end: e._at });
+        tag = 'pause';
+      } else if (wasPaused && !nowPaused) {
+        activePeriodStart = e._at;
+        windowStart = e._at;
+        tag = 'resume';
+      }
+      wasPaused = nowPaused;
+    } else if (e['name'] === 'Assignee Changed' && !wasPaused) {
+      activeWindows.push({ start: windowStart, end: e._at });
+      activePeriodStart = e._at;
+      windowStart = e._at;
+      tag = 'reassign';
     }
-    if (wasPaused && !nowPaused) {
-      activePeriodStart = se._at;
-      windowStart = se._at;
-    }
-    wasPaused = nowPaused;
+    resetTimeline.push({
+      at: e._at,
+      type: e['name'] === 'Status Changed' ? 'status' : 'assignee',
+      from: e['old_value'] === 'null' ? null : e['old_value'],
+      to: e['new_value'] === 'null' ? null : e['new_value'],
+      by: e['full_name'] || null,
+      tag,
+    });
   }
 
   // End of the current active window:
@@ -144,6 +171,7 @@ function computeTicketFromEvents(ticketId, rawEvents) {
     lastReopenedDate,
     lastReopenedBy,
     // Full event trail, for the "calculation journey" drill-down view
+    resetTimeline,
     statusTimeline: statusEvents.map(se => ({
       at: se._at,
       from: se['old_value'] === 'null' ? null : se['old_value'],
