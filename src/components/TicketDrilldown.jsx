@@ -20,66 +20,46 @@ function fmtShort(d) {
   });
 }
 
-// One ticket's full calculation journey: status timeline + window breakdown + final numbers
+// One ticket's calculation breakdown, from the available sheet columns.
+// The sheet is one row per ticket (no per-event history), so this shows
+// the timestamps that fed the calculation rather than a full timeline.
 function TicketJourney({ ticket }) {
   const t = ticket;
-  const lastStatusAt = t.statusTimeline[t.statusTimeline.length - 1]?.at;
   return (
     <div className="journey-panel">
       <div className="journey-section">
-        <h4>Status &amp; Assignee Timeline</h4>
-        <div className="journey-timeline">
-          <div className="journey-event journey-event--create">
-            <span className="journey-dot" />
-            <div>
-              <div className="journey-event-title">Created</div>
-              <div className="journey-event-time">{fmt(t.createdAt)}</div>
-            </div>
-          </div>
-          {t.resetTimeline.map((e, i) => (
-            <div key={i} className={`journey-event ${e.tag === 'pause' ? 'journey-event--pause' : e.tag === 'resume' || e.tag === 'reassign' ? 'journey-event--resume' : ''}`}>
-              <span className="journey-dot" style={{ background: e.type === 'status' ? getStatusColor(e.to) : '#6366f1' }} />
-              <div>
-                <div className="journey-event-title">
-                  {e.type === 'status'
-                    ? <>{e.from || 'New'} → <strong>{e.to}</strong></>
-                    : <>Reassigned: {e.from} → <strong>{e.to}</strong></>}
-                  {e.tag === 'resume' && <span className="journey-tag journey-tag--resume">window starts here</span>}
-                  {e.tag === 'pause' && <span className="journey-tag journey-tag--pause">clock paused</span>}
-                  {e.tag === 'reassign' && <span className="journey-tag journey-tag--resume">window restarts (reassigned)</span>}
-                </div>
-                <div className="journey-event-time">{fmt(e.at)} {e.by && `· by ${e.by}`}</div>
-              </div>
-            </div>
-          ))}
-          {t.tatPaused && (
-            <div className="journey-event journey-event--current">
-              <span className="journey-dot journey-dot--live" />
-              <div>
-                <div className="journey-event-title">Currently paused (Info Required)</div>
-                <div className="journey-event-time">Clock frozen since {fmt(lastStatusAt)}</div>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="journey-section">
-        <h4>Active Windows (working hours, excludes Info Required pauses and resets on reassignment)</h4>
+        <h4>Key Timestamps</h4>
         <table className="journey-windows">
-          <thead>
-            <tr><th>#</th><th>Start</th><th>End</th><th>Working Hours</th><th></th></tr>
-          </thead>
           <tbody>
-            {t.windows.map((w, i) => (
-              <tr key={i} className={w.isCurrent ? 'journey-window-current' : ''}>
-                <td>{i + 1}</td>
-                <td>{fmtShort(w.start)}</td>
-                <td>{fmtShort(w.end)}</td>
-                <td>{w.hours.toFixed(2)}h</td>
-                <td>{w.isCurrent && <span className="journey-tag journey-tag--current">used for SLA</span>}</td>
+            <tr>
+              <td>Created</td>
+              <td>{fmt(t.createdAt)}</td>
+              <td></td>
+            </tr>
+            {t.firstAssigneeChanged && (
+              <tr>
+                <td>Moved to team (dispatcher handoff)</td>
+                <td>{fmt(t.firstAssigneeChanged)}</td>
+                <td></td>
               </tr>
-            ))}
+            )}
+            {t.newCreationTimestampCs && t.newCreationTimestampCs.getTime() !== t.createdAt?.getTime() && (
+              <tr>
+                <td>System restart marker (Info Provided)</td>
+                <td>{fmt(t.newCreationTimestampCs)}</td>
+                <td></td>
+              </tr>
+            )}
+            <tr className="journey-window-current">
+              <td>Active period start (used for SLA)</td>
+              <td>{fmt(t.activePeriodStart)}</td>
+              <td><span className="journey-tag journey-tag--current">used for SLA</span></td>
+            </tr>
+            <tr>
+              <td>{t.isClosed ? 'Closed' : 'Last updated'}</td>
+              <td>{fmt(t.updatedAt)}</td>
+              <td></td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -88,12 +68,8 @@ function TicketJourney({ ticket }) {
         <h4>Result</h4>
         <div className="journey-result-grid">
           <div>
-            <div className="journey-result-label">Current-window TAT (used for SLA)</div>
+            <div className="journey-result-label">Working TAT (active period start → {t.isClosed ? 'close' : 'now'})</div>
             <div className="journey-result-value">{t.workingTAT?.toFixed(2)}h</div>
-          </div>
-          <div>
-            <div className="journey-result-label">Cumulative TAT (all windows)</div>
-            <div className="journey-result-value">{t.cumulativeWorkingTAT?.toFixed(2)}h</div>
           </div>
           <div>
             <div className="journey-result-label">SLA Deadline</div>
@@ -102,7 +78,7 @@ function TicketJourney({ ticket }) {
           <div>
             <div className="journey-result-label">Breach Status</div>
             <div className={`journey-result-value ${t.slaBreached ? 'journey-breached' : 'journey-ok'}`}>
-              {t.tatPaused ? 'Paused' : t.slaBreached ? `Breached (>${SLA_HOURS}h)` : 'Within SLA'}
+              {t.tatPaused ? 'Paused (Info Required)' : t.slaBreached ? `Breached (>${SLA_HOURS}h)` : 'Within SLA'}
             </div>
           </div>
         </div>

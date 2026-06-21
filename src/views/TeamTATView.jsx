@@ -44,9 +44,9 @@ export default function TeamTATView({ tickets }) {
   const [drilldown, setDrilldown] = useState(null); // { title, tickets }
 
   const { members, chartData, totals } = useMemo(() => {
-    // Filter to team members (by full name) with a valid working TAT
+    // Filter to team members (by email) with a valid working TAT
     const valid = tickets.filter(
-      t => isTeamMember(t.assigneeName) && t.workingTAT != null && t.assigneeName
+      t => isTeamMember(t.assigneeEmail) && t.workingTAT != null && t.assigneeName
     );
 
     const memberMap = {};

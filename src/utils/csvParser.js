@@ -1,11 +1,5 @@
 import Papa from 'papaparse';
 import { workingHoursBetween, addWorkingHours, SLA_HOURS } from './workingHours';
-import { isTeamMember } from './teamConfig';
-
-// Dispatcher/triage assignees — tickets often land here first before being
-// routed to the actual handler. A handoff FROM one of these names TO any
-// team member resets the TAT window (see DISPATCHER_NAMES usage below).
-const DISPATCHER_NAMES = new Set(['Prakash Singh Kanyal', 'Saurabh Sippy']);
 
 // Statuses that count as "open" (pending resolution)
 export const OPEN_STATUSES = ['Open', 'Reopened', 'In Progress', 'Info Required', 'Info Provided', 'New', null, ''];
@@ -33,188 +27,113 @@ export function parseDate(val) {
   return isNaN(d.getTime()) ? null : d;
 }
 
-// ── Reconstruct tickets from the activity log ──────────────────────
-// The sheet is now an event log: one row per change (status, assignee,
-// comment, attachment, priority, description), keyed by ticket_id.
-// We group by ticket_id, sort chronologically, and replay the journey to
-// derive each ticket's current state, assignee, TAT and SLA window.
+function computeTicketMetrics(row) {
+  const createdAt = parseDate(row['created_at'] || row['creation_date']);
+  const updatedAt = parseDate(row['updated_at'] || row['updation_date']);
+  const status = row['current_ticket_status'] || null;
+  const finalStatus = row['Final_Ticket_Status'] || null;
 
-function computeTicketFromEvents(ticketId, rawEvents) {
-  const events = rawEvents
-    .map(r => ({ ...r, _at: parseDate(r['created_at']) }))
-    .filter(e => e._at)
-    .sort((a, b) => a._at - b._at);
+  const isOpen = !CLOSED_STATUSES.includes(status) && !CLOSED_STATUSES.includes(finalStatus);
+  const isClosed = CLOSED_STATUSES.includes(finalStatus) || CLOSED_STATUSES.includes(status);
 
-  if (events.length === 0) return null;
+  // Use pre-computed TAT columns when available, else compute from timestamps
+  let tatHours = parseFloat(row['tat_in_hours']) || null;
+  let firstResponseTAT = parseFloat(row['first_response_TAT']) || null;
 
-  const creationEvent = events.find(e => e['name'] === 'New Ticket Created') || events[0];
-  const createdAt = creationEvent._at;
-  const creatorName = creationEvent['full_name'] || null;
+  // TAT is paused while waiting for customer info — team is not penalised
+  const tatPaused = isOpen && status === 'Info Required';
 
-  const statusEvents = events.filter(e => e['name'] === 'Status Changed');
-  const assigneeEvents = events.filter(e => e['name'] === 'Assignee Changed');
-
-  const lastEvent = events[events.length - 1];
-  const updatedAt = lastEvent._at;
-  const lastUpdatedBy = lastEvent['full_name'] || null;
-  const lastActivityName = lastEvent['name'] || null;
-
-  const currentStatus = statusEvents.length
-    ? statusEvents[statusEvents.length - 1]['new_value']
-    : 'New';
-  const isClosed = CLOSED_STATUSES.includes(currentStatus);
-  const isOpen = !isClosed;
-
-  const assigneeName = assigneeEvents.length
-    ? assigneeEvents[assigneeEvents.length - 1]['new_value']
-    : creatorName;
-
-  // Reopen tracking
-  const reopenEvents = statusEvents.filter(e => e['new_value'] === 'Reopened');
-  const totalReopenedCount = reopenEvents.length;
-  const lastReopen = reopenEvents[reopenEvents.length - 1] || null;
-  const lastReopenedDate = lastReopen ? lastReopen._at : null;
-  const lastReopenedBy = lastReopen ? lastReopen['full_name'] : null;
-
-  // TAT is paused while waiting for customer info — team not penalised
-  const tatPaused = isOpen && currentStatus === 'Info Required';
-
-  // Active period start: replay status + assignee changes in chronological
-  // order. A fresh SLA window begins whenever:
-  //   - the ticket comes OUT of "Info Required" (info was provided), or
-  //   - the assignee changes while the clock is running (the new owner
-  //     gets a clean window from the moment they actually receive it —
-  //     time spent with a prior/wrong assignee doesn't count against them)
-  // Assignee changes that happen WHILE paused (mid Info-Required) don't
-  // affect anything — the clock is already stopped.
+  // Reset signals, in order of how they apply:
+  //   firstAssigneeChanged = when the ticket was first handed from a
+  //     dispatcher (Prakash/Saurabh) to the actual Information Services
+  //     handler — "ticket moved to team → time start"
+  //   csRestart (new_creation_timestamp_cs) = the system's own restart
+  //     marker, which moves forward again if the ticket later cycles
+  //     through Info Required → Info Provided
+  //   updatedAt = used only while currently Info Provided & open, since the
+  //     system column may lag behind a just-happened status change
   //
-  // Simultaneously build the full list of active (non-paused) windows, and
-  // a merged reset timeline, so the UI can show the entire calculation
-  // journey — not just the current window.
-  const resetEvents = events.filter(e => e['name'] === 'Status Changed' || e['name'] === 'Assignee Changed');
+  // The active period always starts at the LATEST of whichever of these
+  // signals apply — i.e. the most recent reset, exactly matching the
+  // "multi-TAT" rule: each handoff/Info-Provided event starts a fresh clock.
+  const firstAssigneeChanged = parseDate(row['first_assignee_changed_info']);
+  const csRestart = parseDate(row['new_creation_timestamp_cs']);
 
-  let activePeriodStart = createdAt;
-  let wasPaused = false;
-  let windowStart = createdAt;
-  const activeWindows = [];
-  const resetTimeline = [];
+  const resetCandidates = [firstAssigneeChanged, csRestart];
+  if (!isClosed && status === 'Info Provided' && updatedAt) resetCandidates.push(updatedAt);
+  const validResets = resetCandidates.filter(Boolean);
+  const activePeriodStart = validResets.length
+    ? new Date(Math.max(...validResets.map(d => d.getTime())))
+    : createdAt;
 
-  for (const e of resetEvents) {
-    let tag = null;
-    if (e['name'] === 'Status Changed') {
-      const nowPaused = e['new_value'] === 'Info Required';
-      if (!wasPaused && nowPaused) {
-        activeWindows.push({ start: windowStart, end: e._at });
-        tag = 'pause';
-      } else if (wasPaused && !nowPaused) {
-        activePeriodStart = e._at;
-        windowStart = e._at;
-        tag = 'resume';
-      }
-      wasPaused = nowPaused;
-    } else if (e['name'] === 'Assignee Changed' && !wasPaused) {
-      // Only a handoff from a dispatcher (Prakash/Saurabh) to an actual team
-      // member resets the window — team-to-team or other reassignments don't.
-      const fromDispatcher = DISPATCHER_NAMES.has(e['old_value']);
-      const toTeamMember = isTeamMember(e['new_value']);
-      if (fromDispatcher && toTeamMember) {
-        activeWindows.push({ start: windowStart, end: e._at });
-        activePeriodStart = e._at;
-        windowStart = e._at;
-        tag = 'reassign';
-      }
-    }
-    resetTimeline.push({
-      at: e._at,
-      type: e['name'] === 'Status Changed' ? 'status' : 'assignee',
-      from: e['old_value'] === 'null' ? null : e['old_value'],
-      to: e['new_value'] === 'null' ? null : e['new_value'],
-      by: e['full_name'] || null,
-      tag,
-    });
+  // Working TAT for the current active period:
+  //   - Info Required: frozen at the moment the clock was paused (updatedAt)
+  //   - Closed: time from active period start to closure
+  //   - Open: elapsed time from active period start to now
+  let workingTAT = null;
+  if (activePeriodStart) {
+    let endTime;
+    if (tatPaused)                   endTime = updatedAt || new Date();  // frozen
+    else if (isClosed && updatedAt)  endTime = updatedAt;
+    else                             endTime = new Date();
+    workingTAT = workingHoursBetween(activePeriodStart, endTime);
   }
 
-  // End of the current active window:
-  //   Info Required: frozen at the moment it was paused (last status event)
-  //   Closed: at the last recorded event
-  //   Open (active): now
-  let endTime;
-  if (tatPaused)      endTime = statusEvents[statusEvents.length - 1]._at;
-  else if (isClosed)  endTime = updatedAt;
-  else                endTime = new Date();
+  // Paused tickets are not breached — clock is stopped
+  const slaBreached = tatPaused
+    ? false
+    : (workingTAT !== null ? workingTAT > SLA_HOURS : (tatHours !== null ? tatHours > SLA_HOURS : false));
 
-  // Trailing window (the one still running, or the one that ended at closure)
-  if (!wasPaused) {
-    activeWindows.push({ start: windowStart, end: endTime });
-  }
-
-  const windows = activeWindows.map((w, i) => ({
-    start: w.start,
-    end: w.end,
-    hours: workingHoursBetween(w.start, w.end),
-    isCurrent: i === activeWindows.length - 1,
-  }));
-  const cumulativeWorkingTAT = windows.reduce((s, w) => s + w.hours, 0);
-
-  const workingTAT = activePeriodStart ? workingHoursBetween(activePeriodStart, endTime) : null;
+  // SLA deadline = active period start + SLA_HOURS working hours
   const slaDeadline = activePeriodStart ? addWorkingHours(activePeriodStart, SLA_HOURS) : null;
-  const slaBreached = tatPaused ? false : (workingTAT !== null ? workingTAT > SLA_HOURS : false);
 
   return {
-    id: ticketId,
+    id: row['tickets_id'] || row['ticket_key'],
+    ticketKey: row['ticket_key'],
+    ticketLink: row['ticket_link'],
+    summary: row['summary'],
+    shortCode: row['ticket_short_code'],
+    projectName: row['ticket_project_name'],
+    category: row['category'],
+    subcategory: row['subcategory'],
+    creatorName: row['ticket_creater_name'],
+    creatorEmail: row['ticket_creater_email'],
+    assigneeName: row['assignee_Name'],
+    assigneeEmail: row['assignee_email_id'],
     createdAt,
     activePeriodStart,
+    firstAssigneeChanged,
     updatedAt,
-    creatorName,
-    assigneeName,
-    currentStatus,
-    finalStatus: isClosed ? currentStatus : null,
+    priority: row['priority'],
+    currentStatus: status,
+    finalStatus,
     isOpen,
     isClosed,
+    tatHours,
     workingTAT,
-    cumulativeWorkingTAT,
-    windows,
     tatPaused,
     slaBreached,
     slaDeadline,
-    lastUpdatedBy,
-    lastActivityName,
-    totalReopenedCount,
-    lastReopenedDate,
-    lastReopenedBy,
-    // Full event trail, for the "calculation journey" drill-down view
-    resetTimeline,
-    statusTimeline: statusEvents.map(se => ({
-      at: se._at,
-      from: se['old_value'] === 'null' ? null : se['old_value'],
-      to: se['new_value'],
-      by: se['full_name'] || null,
-    })),
-    events: events.map(e => ({
-      at: e._at,
-      name: e['name'],
-      from: e['old_value'] === 'null' ? null : e['old_value'],
-      to: e['new_value'] === 'null' ? null : e['new_value'],
-      by: e['full_name'] || null,
-    })),
+    firstResponseTAT,
+    firstResponseGroup: row['first_response_TAT_group'],
+    tatGroup: row['tat_group'],
+    lastReopenedDate: parseDate(row['last_reopened_date']),
+    lastReopenedBy: row['last_reopened_by'],
+    totalReopenedCount: parseInt(row['total_reopened_count']) || 0,
+    department: row['ticket_raised_by_deparment'],
+    subDepartment: row['ticket_raised_by_sub_department'],
+    paidStatus: row['project_paid_status'],
+    reportingManager: row['reporting_manager_name'],
+    lastActivityTeam: row['Last_Activity_Team_Name'],
+    lastAssigneeTeam: row['Last_Assignee_Team_Name'] || null,
+    lastUpdatedBy: row['activity_by'] || null,
+    lastActivityName: row['activity_name'] || null,
+    lastActivitySection: row['activity_section'] || null,
+    // info suffix = first response track
+    newCreationTimestampInfo: parseDate(row['new_creation_timestamp_info']),
+    // cs suffix = last response track
+    newCreationTimestampCs: csRestart,
   };
-}
-
-function buildTicketsFromActivityLog(rows) {
-  const byTicket = new Map();
-  for (const row of rows) {
-    const tid = row['ticket_id'];
-    if (!tid) continue;
-    if (!byTicket.has(tid)) byTicket.set(tid, []);
-    byTicket.get(tid).push(row);
-  }
-
-  const tickets = [];
-  for (const [ticketId, events] of byTicket) {
-    const ticket = computeTicketFromEvents(ticketId, events);
-    if (ticket) tickets.push(ticket);
-  }
-  return tickets;
 }
 
 export function parseCSV(file) {
@@ -224,7 +143,7 @@ export function parseCSV(file) {
       skipEmptyLines: true,
       dynamicTyping: false,
       complete: (results) => {
-        const tickets = buildTicketsFromActivityLog(results.data);
+        const tickets = results.data.map(computeTicketMetrics);
         resolve(tickets);
       },
       error: reject,
